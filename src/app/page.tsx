@@ -95,7 +95,7 @@ const editSchema = z.object({
   category: z.string({ required_error: "Please select a category." }),
 });
 
-const categories = ["All", "Gaming", "Vlog", "Tutorial", "Lifestyle", "Tech", "Cooking", "Education"];
+const categories = ["All", "CKO Ghost City", "Horror", "ဖြစ်ရပ်မှန်", "အောက်လမ်း", "ပညာပေး", "စုန်း", "သရဲ"];
 
 // Helper function to convert a file to a Base64 data URI
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
