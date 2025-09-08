@@ -6,7 +6,7 @@ const firebaseConfig = {
   "projectId": "new-prototype-xn0xr",
   "appId": "1:407636448141:web:67decdaa498180e241e3c4",
   "storageBucket": "new-prototype-xn0xr.firebasestorage.app",
-  "apiKey": "AIzaSyCa_hFXTXi9I0GbLKYQOloSPe5dWIf-GRE",
+  "apiKey": "AIzaSyBri-YGH9BxjTT_V7oEnV7ntYnZz_LvJBc",
   "authDomain": "new-prototype-xn0xr.firebaseapp.com",
   "measurementId": "",
   "messagingSenderId": "407636448141"
