@@ -2,12 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Upload, Search } from "lucide-react";
+import { Upload, Search, MoreVertical, Trash2, Download } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, doc, deleteDoc } from "firebase/firestore";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,23 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -138,6 +155,35 @@ export default function Home() {
     form.reset();
     setImagePreview(null);
   }
+
+  const handleDelete = async (thumbnailId: string, thumbnailTitle: string) => {
+    try {
+      await deleteDoc(doc(db, "thumbnails", thumbnailId));
+      setThumbnails(thumbnails.filter((t) => t.id !== thumbnailId));
+      toast({
+        title: "Deleted!",
+        description: `Thumbnail "${thumbnailTitle}" has been removed.`,
+      });
+    } catch (error) {
+      console.error("Error deleting thumbnail:", error);
+      toast({
+        title: "Delete Failed",
+        description: "There was an error deleting the thumbnail. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownload = (imageUrl: string, title: string) => {
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    // Extract extension from MIME type, default to 'png'
+    const extension = imageUrl.split(';')[0].split('/')[1] || 'png';
+    link.download = `${title.replace(/\s+/g, '_')}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   async function onSubmit(values: z.infer<typeof uploadSchema>) {
     const file = values.image[0];
@@ -368,6 +414,44 @@ export default function Home() {
                     sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
                     data-ai-hint="youtube thumbnail"
                   />
+                   <div className="absolute top-2 right-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full bg-background/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleDownload(thumbnail.imageUrl, thumbnail.title)}>
+                          <Download className="mr-2 h-4 w-4" />
+                          <span>Download</span>
+                        </DropdownMenuItem>
+                         <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                              <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                              <span className="text-destructive">Delete</span>
+                            </DropdownMenuItem>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete your thumbnail
+                                titled "{thumbnail.title}".
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleDelete(thumbnail.id, thumbnail.title)} className="bg-destructive hover:bg-destructive/90">
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </CardContent>
               <CardHeader className="p-4">
@@ -397,3 +481,5 @@ export default function Home() {
     </div>
   );
 }
+
+    
