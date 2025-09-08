@@ -47,8 +47,11 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 
-const MAX_IMAGE_SIZE_MB = 1;
-const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024;
+// Firestore's 1 MiB limit, with a small buffer.
+const MAX_DOC_SIZE_BYTES = 1048487; 
+const MAX_IMAGE_FILE_SIZE_MB = 0.7; // Approx 700KB file should be safe
+const MAX_IMAGE_FILE_SIZE_BYTES = MAX_IMAGE_FILE_SIZE_MB * 1024 * 1024;
+
 
 type Thumbnail = {
   id: string;
@@ -65,8 +68,8 @@ const uploadSchema = z.object({
     .any()
     .refine((files) => files?.length == 1, "Image is required.")
     .refine(
-      (files) => files?.[0]?.size <= MAX_IMAGE_SIZE_BYTES,
-      `Image must be less than ${MAX_IMAGE_SIZE_MB}MB.`
+      (files) => files?.[0]?.size <= MAX_IMAGE_FILE_SIZE_BYTES,
+      `Image must be less than ${MAX_IMAGE_FILE_SIZE_MB}MB.`
     ),
 });
 
@@ -79,6 +82,13 @@ const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) 
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = error => reject(error);
 });
+
+// Helper to get byte length of a string
+const getByteLength = (str: string) => {
+    // Note: In UTF-8, characters can be 1 to 4 bytes.
+    // This is a common and reasonably accurate way to estimate.
+    return new Blob([str]).size;
+}
 
 export default function Home() {
   const [thumbnails, setThumbnails] = useState<Thumbnail[]>([]);
@@ -139,14 +149,12 @@ export default function Home() {
     try {
       setUploadProgress(30);
       const imageDataUrl = await toBase64(file);
-
-      // Firestore has a 1MB limit for documents. The Base64 string is larger than the raw file.
-      // We double-check here on the Base64 string size for safety, though the initial file size check should catch most cases.
-      if (imageDataUrl.length > MAX_IMAGE_SIZE_BYTES * 1.4) { // 1.4 is a rough factor for base64 encoding overhead
-         throw new Error(`Image is too large after encoding. Please use a smaller file.`);
-      }
-      
       setUploadProgress(60);
+
+      // Final check: ensure the generated Base64 string is under Firestore's limit
+      if (getByteLength(imageDataUrl) > MAX_DOC_SIZE_BYTES) {
+        throw new Error(`The selected image is too large (over 1MB after encoding). Please choose a smaller file.`);
+      }
 
       const newThumbnailData = {
         title: values.title,
@@ -173,11 +181,17 @@ export default function Home() {
     } catch (error) {
       console.error("Error uploading thumbnail:", error);
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      
+      let toastDescription = "There was an error uploading your thumbnail. Please try again.";
+      if (errorMessage.includes("too large")) {
+          toastDescription = errorMessage;
+      } else if (errorMessage.toLowerCase().includes('firestore')) {
+          toastDescription = "Error communicating with the database. Please check your connection and Firestore setup.";
+      }
+
       toast({
         title: "Upload Failed",
-        description: errorMessage.includes("too large") 
-          ? `The image is too large. Please upload an image smaller than ${MAX_IMAGE_SIZE_MB}MB.`
-          : "There was an error uploading your thumbnail. Please try again.",
+        description: toastDescription,
         variant: "destructive",
       });
     } finally {
