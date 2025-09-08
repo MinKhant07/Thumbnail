@@ -2,12 +2,13 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Upload, Search, MoreVertical, Trash2, Download, Pencil } from "lucide-react";
+import { Upload, Search, MoreVertical, Trash2, Download, Pencil, Sparkles, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, orderBy, query, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { critiqueThumbnail, CritiqueThumbnailOutput } from "@/ai/flows/critique-thumbnail-flow";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -78,6 +80,12 @@ type Thumbnail = {
   createdAt: Date;
 };
 
+type CritiqueResult = CritiqueThumbnailOutput & {
+  thumbnailTitle: string;
+  thumbnailUrl: string;
+};
+
+
 const uploadSchema = z.object({
   title: z.string().min(3, { message: "Title must be at least 3 characters." }),
   category: z.string({ required_error: "Please select a category." }),
@@ -122,6 +130,9 @@ export default function Home() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isCritiqueDialogOpen, setIsCritiqueDialogOpen] = useState(false);
+  const [critiqueResult, setCritiqueResult] = useState<CritiqueResult | null>(null);
+  const [isCritiquing, setIsCritiquing] = useState(false);
   const { toast } = useToast();
 
   const uploadForm = useForm<z.infer<typeof uploadSchema>>({
@@ -211,6 +222,31 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
   };
+
+  const handleCritique = async (thumbnail: Thumbnail) => {
+    setCritiqueResult(null);
+    setIsCritiqueDialogOpen(true);
+    setIsCritiquing(true);
+    try {
+      const result = await critiqueThumbnail({ imageDataUri: thumbnail.imageUrl });
+      setCritiqueResult({ 
+        ...result, 
+        thumbnailTitle: thumbnail.title,
+        thumbnailUrl: thumbnail.imageUrl
+      });
+    } catch (error) {
+      console.error("Error critiquing thumbnail:", error);
+      toast({
+        title: "Critique Failed",
+        description: "There was an error analyzing the thumbnail. Please try again later.",
+        variant: "destructive",
+      });
+      setIsCritiqueDialogOpen(false);
+    } finally {
+      setIsCritiquing(false);
+    }
+  };
+
 
   async function onUploadSubmit(values: z.infer<typeof uploadSchema>) {
     const file = values.image[0];
@@ -490,6 +526,77 @@ export default function Home() {
                 </Form>
             </DialogContent>
         </Dialog>
+        {/* AI Critique Dialog */}
+        <Dialog open={isCritiqueDialogOpen} onOpenChange={setIsCritiqueDialogOpen}>
+            <DialogContent className="sm:max-w-2xl">
+                 <DialogHeader>
+                    <DialogTitle>AI Thumbnail Critique</DialogTitle>
+                    <DialogDescription>
+                        An expert analysis of your thumbnail by Gemini AI.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {isCritiquing && (
+                  <div className="flex flex-col items-center justify-center gap-4 py-16">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="text-muted-foreground">Gemini is analyzing your thumbnail...</p>
+                  </div>
+                )}
+                
+                {critiqueResult && !isCritiquing && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+                    <div className="relative aspect-video">
+                        <Image src={critiqueResult.thumbnailUrl} alt={critiqueResult.thumbnailTitle} fill className="object-contain rounded-md" />
+                    </div>
+                    <div className="flex flex-col space-y-4">
+                        <div>
+                          <h3 className="font-semibold text-lg mb-2">Scores</h3>
+                          <div className="space-y-3">
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-sm">
+                                  <p>Engagement</p>
+                                  <p className="font-bold">{critiqueResult.engagementScore}/100</p>
+                                </div>
+                                <Progress value={critiqueResult.engagementScore} />
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-sm">
+                                  <p>Clarity</p>
+                                   <p className="font-bold">{critiqueResult.clarityScore}/100</p>
+                                </div>
+                                <Progress value={critiqueResult.clarityScore} />
+                              </div>
+                               <div className="space-y-1">
+                                <div className="flex justify-between items-center text-sm">
+                                  <p>Color</p>
+                                   <p className="font-bold">{critiqueResult.colorScore}/100</p>
+                                </div>
+                                <Progress value={critiqueResult.colorScore} />
+                              </div>
+                          </div>
+                        </div>
+
+                        <div>
+                            <h3 className="font-semibold text-lg mb-2">Overall Verdict</h3>
+                            <p className="text-sm text-muted-foreground italic">"{critiqueResult.overallVerdict}"</p>
+                        </div>
+                         
+                        <div>
+                            <h3 className="font-semibold text-lg mb-2">Suggestions</h3>
+                            <ul className="list-disc list-inside space-y-2 text-sm">
+                                {critiqueResult.suggestions.map((suggestion, index) => (
+                                    <li key={index}>{suggestion}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                  </div>
+                )}
+                 <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCritiqueDialogOpen(false)}>Close</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
       <main className="flex-1 p-4 md:p-6 lg:p-8">
         <div className="mb-8 space-y-4">
             <h2 className="text-3xl font-bold tracking-tight font-headline">Your Collection</h2>
@@ -539,6 +646,11 @@ export default function Home() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleCritique(thumbnail)}>
+                          <Sparkles className="mr-2 h-4 w-4 text-primary" />
+                          <span className="text-primary">AI Critique</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => handleEditDialogOpen(thumbnail)}>
                           <Pencil className="mr-2 h-4 w-4" />
                           <span>Edit</span>
