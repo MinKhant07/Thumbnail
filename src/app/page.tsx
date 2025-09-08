@@ -2,12 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
-import { Upload, Search, MoreVertical, Trash2, Download } from "lucide-react";
+import { Upload, Search, MoreVertical, Trash2, Download, Pencil } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, orderBy, query, doc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, doc, deleteDoc, updateDoc } from "firebase/firestore";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +32,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -90,6 +89,11 @@ const uploadSchema = z.object({
     ),
 });
 
+const editSchema = z.object({
+  title: z.string().min(3, { message: "Title must be at least 3 characters." }),
+  category: z.string({ required_error: "Please select a category." }),
+});
+
 const categories = ["All", "Gaming", "Vlog", "Tutorial", "Lifestyle", "Tech", "Cooking", "Education"];
 
 // Helper function to convert a file to a Base64 data URI
@@ -111,17 +115,23 @@ export default function Home() {
   const [thumbnails, setThumbnails] = useState<Thumbnail[]>([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingThumbnail, setEditingThumbnail] = useState<Thumbnail | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
 
-  const form = useForm<z.infer<typeof uploadSchema>>({
+  const uploadForm = useForm<z.infer<typeof uploadSchema>>({
     resolver: zodResolver(uploadSchema),
     defaultValues: {
       title: "",
     },
+  });
+  
+  const editForm = useForm<z.infer<typeof editSchema>>({
+    resolver: zodResolver(editSchema),
   });
 
   useEffect(() => {
@@ -148,13 +158,29 @@ export default function Home() {
     fetchThumbnails();
   }, [toast]);
 
-  const fileRef = form.register("image");
+  const fileRef = uploadForm.register("image");
   
-  const handleDialogClose = () => {
-    setIsDialogOpen(false);
-    form.reset();
+  const handleUploadDialogClose = () => {
+    setIsUploadDialogOpen(false);
+    uploadForm.reset();
     setImagePreview(null);
   }
+
+  const handleEditDialogOpen = (thumbnail: Thumbnail) => {
+    setEditingThumbnail(thumbnail);
+    editForm.reset({
+      title: thumbnail.title,
+      category: thumbnail.category,
+    });
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleEditDialogClose = () => {
+    setIsEditDialogOpen(false);
+    setEditingThumbnail(null);
+    editForm.reset();
+  };
+
 
   const handleDelete = async (thumbnailId: string, thumbnailTitle: string) => {
     try {
@@ -185,7 +211,7 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  async function onSubmit(values: z.infer<typeof uploadSchema>) {
+  async function onUploadSubmit(values: z.infer<typeof uploadSchema>) {
     const file = values.image[0];
     if (!file) return;
 
@@ -222,7 +248,7 @@ export default function Home() {
         description: `Thumbnail "${values.title}" has been added.`,
       });
       
-      handleDialogClose();
+      handleUploadDialogClose();
 
     } catch (error) {
       console.error("Error uploading thumbnail:", error);
@@ -246,6 +272,38 @@ export default function Home() {
     }
   }
 
+  async function onEditSubmit(values: z.infer<typeof editSchema>) {
+    if (!editingThumbnail) return;
+
+    try {
+        const thumbnailRef = doc(db, "thumbnails", editingThumbnail.id);
+        await updateDoc(thumbnailRef, {
+            title: values.title,
+            category: values.category,
+        });
+
+        setThumbnails(thumbnails.map(t => 
+            t.id === editingThumbnail.id ? { ...t, ...values } : t
+        ));
+
+        toast({
+            title: "Success!",
+            description: "Thumbnail details have been updated.",
+        });
+
+        handleEditDialogClose();
+
+    } catch (error) {
+        console.error("Error updating thumbnail:", error);
+        toast({
+            title: "Update Failed",
+            description: "There was an error updating the thumbnail. Please try again.",
+            variant: "destructive",
+        });
+    }
+  }
+
+
   const filteredThumbnails = useMemo(() => {
     return thumbnails
       .filter((thumb) => activeCategory === "All" || thumb.category === activeCategory)
@@ -259,11 +317,11 @@ export default function Home() {
           Thumbnail <span className="text-primary">Zone</span>
         </h1>
         <div className="ml-auto flex items-center gap-4">
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          <Dialog open={isUploadDialogOpen} onOpenChange={(open) => {
             if (open) {
-                setIsDialogOpen(true);
+                setIsUploadDialogOpen(true);
             } else {
-                handleDialogClose();
+                handleUploadDialogClose();
             }
           }}>
             <DialogTrigger asChild>
@@ -278,10 +336,10 @@ export default function Home() {
                   Add a new thumbnail to your collection. Enter the details below.
                 </DialogDescription>
               </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+              <Form {...uploadForm}>
+                <form onSubmit={uploadForm.handleSubmit(onUploadSubmit)} className="space-y-4 py-4">
                   <FormField
-                    control={form.control}
+                    control={uploadForm.control}
                     name="title"
                     render={({ field }) => (
                       <FormItem>
@@ -294,7 +352,7 @@ export default function Home() {
                     )}
                   />
                   <FormField
-                    control={form.control}
+                    control={uploadForm.control}
                     name="category"
                     render={({ field }) => (
                       <FormItem>
@@ -318,7 +376,7 @@ export default function Home() {
                     )}
                   />
                   <FormField
-                    control={form.control}
+                    control={uploadForm.control}
                     name="image"
                     render={({ field }) => (
                       <FormItem>
@@ -373,6 +431,64 @@ export default function Home() {
           </Dialog>
         </div>
       </header>
+       {/* Edit Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={(open) => !open && handleEditDialogClose()}>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <DialogTitle>Edit Thumbnail</DialogTitle>
+                    <DialogDescription>
+                        Update the title and category for your thumbnail.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form {...editForm}>
+                    <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 py-4">
+                        <FormField
+                            control={editForm.control}
+                            name="title"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Title</FormLabel>
+                                    <FormControl>
+                                        <Input placeholder="e.g., My Awesome Video" {...field} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={editForm.control}
+                            name="category"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Category</FormLabel>
+                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a category" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            {categories.filter(c => c !== 'All').map((cat) => (
+                                                <SelectItem key={cat} value={cat}>
+                                                    {cat}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                         <DialogFooter>
+                            <DialogClose asChild>
+                              <Button type="button" variant="secondary">Cancel</Button>
+                            </DialogClose>
+                            <Button type="submit">Save Changes</Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
+            </DialogContent>
+        </Dialog>
       <main className="flex-1 p-4 md:p-6 lg:p-8">
         <div className="mb-8 space-y-4">
             <h2 className="text-3xl font-bold tracking-tight font-headline">Your Collection</h2>
@@ -422,6 +538,10 @@ export default function Home() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditDialogOpen(thumbnail)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          <span>Edit</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDownload(thumbnail.imageUrl, thumbnail.title)}>
                           <Download className="mr-2 h-4 w-4" />
                           <span>Download</span>
