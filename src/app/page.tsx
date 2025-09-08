@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Image from "next/image";
 import { Upload, Search } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { db, storage } from "@/lib/firebase";
+import { collection, addDoc, getDocs, orderBy, query } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -43,12 +46,14 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
 
 type Thumbnail = {
-  id: number;
+  id: string;
   title: string;
   category: string;
   imageUrl: string;
+  createdAt: Date;
 };
 
 const uploadSchema = z.object({
@@ -57,25 +62,16 @@ const uploadSchema = z.object({
   image: z.any().refine((files) => files?.length == 1, "Image is required."),
 });
 
-const initialThumbnails: Thumbnail[] = [
-  { id: 1, title: "Epic Fortnite Montage", category: "Gaming", imageUrl: "https://picsum.photos/id/10/1280/720", },
-  { id: 2, title: "My Trip to Japan", category: "Vlog", imageUrl: "https://picsum.photos/id/20/1280/720", },
-  { id: 3, title: "React Hooks in 10 Minutes", category: "Tutorial", imageUrl: "https://picsum.photos/id/30/1280/720", },
-  { id: 4, title: "Healthy Morning Routine", category: "Lifestyle", imageUrl: "https://picsum.photos/id/40/1280/720", },
-  { id: 5, title: "Minecraft Survival Guide", category: "Gaming", imageUrl: "https://picsum.photos/id/50/1280/720", },
-  { id: 6, title: "Unboxing the new MacBook", category: "Tech", imageUrl: "https://picsum.photos/id/60/1280/720", },
-  { id: 7, title: "How to Cook Pasta", category: "Cooking", imageUrl: "https://picsum.photos/id/70/1280/720", },
-  { id: 8, title: "The Philosophy of Stoicism", category: "Education", imageUrl: "https://picsum.photos/id/80/1280/720", },
-];
-
 const categories = ["All", "Gaming", "Vlog", "Tutorial", "Lifestyle", "Tech", "Cooking", "Education"];
 
 export default function Home() {
-  const [thumbnails, setThumbnails] = useState<Thumbnail[]>(initialThumbnails);
+  const [thumbnails, setThumbnails] = useState<Thumbnail[]>([]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof uploadSchema>>({
@@ -85,29 +81,79 @@ export default function Home() {
     },
   });
 
+  useEffect(() => {
+    const fetchThumbnails = async () => {
+      const q = query(collection(db, "thumbnails"), orderBy("createdAt", "desc"));
+      const querySnapshot = await getDocs(q);
+      const fetchedThumbnails = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt.toDate(),
+      } as Thumbnail));
+      setThumbnails(fetchedThumbnails);
+    };
+
+    fetchThumbnails();
+  }, []);
+
   const fileRef = form.register("image");
 
-  function onSubmit(values: z.infer<typeof uploadSchema>) {
+  async function onSubmit(values: z.infer<typeof uploadSchema>) {
     const file = values.image[0];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const imageUrl = e.target?.result as string;
-      const newThumbnail: Thumbnail = {
-        id: thumbnails.length + 1,
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // 1. Upload image to Firebase Storage
+      const storageRef = ref(storage, `thumbnails/${Date.now()}_${file.name}`);
+      setUploadProgress(30);
+
+      const uploadResult = await uploadBytes(storageRef, file);
+      setUploadProgress(60);
+      
+      const downloadURL = await getDownloadURL(uploadResult.ref);
+      setUploadProgress(80);
+
+      // 2. Save thumbnail data to Firestore
+      const newThumbnailData = {
         title: values.title,
         category: values.category,
-        imageUrl,
+        imageUrl: downloadURL,
+        createdAt: new Date(),
       };
+
+      const docRef = await addDoc(collection(db, "thumbnails"), newThumbnailData);
+      
+      const newThumbnail: Thumbnail = {
+        id: docRef.id,
+        ...newThumbnailData,
+      };
+
       setThumbnails([newThumbnail, ...thumbnails]);
+      setUploadProgress(100);
+
       toast({
         title: "Success!",
         description: `Thumbnail "${values.title}" has been added.`,
       });
+      
+      // Reset form and close dialog
       setIsDialogOpen(false);
       form.reset();
       setImagePreview(null);
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error uploading thumbnail:", error);
+      toast({
+        title: "Upload Failed",
+        description: "There was an error uploading your thumbnail. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   }
 
   const filteredThumbnails = useMemo(() => {
@@ -151,7 +197,7 @@ export default function Home() {
                       <FormItem>
                         <FormLabel>Title</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., My Awesome Video" {...field} />
+                          <Input placeholder="e.g., My Awesome Video" {...field} disabled={isUploading} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -163,7 +209,7 @@ export default function Home() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Category</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isUploading}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a category" />
@@ -189,6 +235,7 @@ export default function Home() {
                         <FormLabel>Image</FormLabel>
                         <FormControl>
                           <Input type="file" accept="image/*" {...fileRef} 
+                           disabled={isUploading}
                            onChange={(e) => {
                               field.onChange(e.target.files);
                               if (e.target.files && e.target.files[0]) {
@@ -209,17 +256,26 @@ export default function Home() {
                     )}
                   />
                   
-                  {imagePreview && (
+                  {imagePreview && !isUploading && (
                     <div className="relative mt-4 h-36 w-full">
                        <Image src={imagePreview} alt="Image preview" layout="fill" objectFit="contain" />
                     </div>
                   )}
 
+                  {isUploading && (
+                    <div className="space-y-2">
+                        <p className="text-sm text-center">Uploading...</p>
+                        <Progress value={uploadProgress} className="w-full" />
+                    </div>
+                  )}
+
                   <DialogFooter>
                     <DialogClose asChild>
-                      <Button type="button" variant="secondary">Cancel</Button>
+                      <Button type="button" variant="secondary" disabled={isUploading}>Cancel</Button>
                     </DialogClose>
-                    <Button type="submit">Upload</Button>
+                    <Button type="submit" disabled={isUploading}>
+                      {isUploading ? "Uploading..." : "Upload"}
+                    </Button>
                   </DialogFooter>
                 </form>
               </Form>
@@ -280,7 +336,14 @@ export default function Home() {
           ))}
         </div>
 
-        {filteredThumbnails.length === 0 && (
+        {thumbnails.length === 0 && (
+             <div className="col-span-full py-20 text-center">
+                <h2 className="mb-2 text-2xl font-semibold">Loading Thumbnails...</h2>
+                <p className="text-muted-foreground">Please wait a moment.</p>
+            </div>
+        )}
+
+        {thumbnails.length > 0 && filteredThumbnails.length === 0 && (
             <div className="col-span-full py-20 text-center">
                 <h2 className="mb-2 text-2xl font-semibold">No thumbnails found</h2>
                 <p className="text-muted-foreground">Try adjusting your search or filters, or upload a new thumbnail.</p>
