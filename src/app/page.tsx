@@ -54,7 +54,7 @@ type Thumbnail = {
 const uploadSchema = z.object({
   title: z.string().min(3, { message: "Title must be at least 3 characters." }),
   category: z.string({ required_error: "Please select a category." }),
-  imageUrl: z.string().url({ message: "Please enter a valid image URL." }),
+  image: z.any().refine((files) => files?.length == 1, "Image is required."),
 });
 
 const initialThumbnails: Thumbnail[] = [
@@ -75,28 +75,39 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof uploadSchema>>({
     resolver: zodResolver(uploadSchema),
     defaultValues: {
       title: "",
-      imageUrl: "",
     },
   });
 
+  const fileRef = form.register("image");
+
   function onSubmit(values: z.infer<typeof uploadSchema>) {
-    const newThumbnail: Thumbnail = {
-      id: thumbnails.length + 1,
-      ...values,
+    const file = values.image[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string;
+      const newThumbnail: Thumbnail = {
+        id: thumbnails.length + 1,
+        title: values.title,
+        category: values.category,
+        imageUrl,
+      };
+      setThumbnails([newThumbnail, ...thumbnails]);
+      toast({
+        title: "Success!",
+        description: `Thumbnail "${values.title}" has been added.`,
+      });
+      setIsDialogOpen(false);
+      form.reset();
+      setImagePreview(null);
     };
-    setThumbnails([newThumbnail, ...thumbnails]);
-    toast({
-      title: "Success!",
-      description: `Thumbnail "${values.title}" has been added.`,
-    });
-    setIsDialogOpen(false);
-    form.reset();
+    reader.readAsDataURL(file);
   }
 
   const filteredThumbnails = useMemo(() => {
@@ -112,7 +123,13 @@ export default function Home() {
           Thumbnail <span className="text-primary">Zone</span>
         </h1>
         <div className="ml-auto flex items-center gap-4">
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              form.reset();
+              setImagePreview(null);
+            }
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <Upload className="mr-2 h-4 w-4" /> Upload Thumbnail
@@ -166,17 +183,38 @@ export default function Home() {
                   />
                   <FormField
                     control={form.control}
-                    name="imageUrl"
+                    name="image"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Image URL</FormLabel>
+                        <FormLabel>Image</FormLabel>
                         <FormControl>
-                          <Input placeholder="https://picsum.photos/1280/720" {...field} />
+                          <Input type="file" accept="image/*" {...fileRef} 
+                           onChange={(e) => {
+                              field.onChange(e.target.files);
+                              if (e.target.files && e.target.files[0]) {
+                                const file = e.target.files[0];
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setImagePreview(e.target?.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              } else {
+                                setImagePreview(null);
+                              }
+                           }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                  
+                  {imagePreview && (
+                    <div className="relative mt-4 h-36 w-full">
+                       <Image src={imagePreview} alt="Image preview" layout="fill" objectFit="contain" />
+                    </div>
+                  )}
+
                   <DialogFooter>
                     <DialogClose asChild>
                       <Button type="button" variant="secondary">Cancel</Button>
