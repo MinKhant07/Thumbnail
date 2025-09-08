@@ -36,13 +36,18 @@ const prompt = ai.definePrompt({
   name: 'critiqueThumbnailPrompt',
   input: {schema: CritiqueThumbnailInputSchema},
   output: {schema: CritiqueThumbnailOutputSchema},
-  prompt: `You are an expert YouTube content strategist and graphic designer with a keen eye for what makes a thumbnail successful.
+  prompt: `သင်က YouTube thumbnail ဒီဇိုင်းတွေကို ဘယ်လိုလုပ်ရင်အောင်မြင်မလဲဆိုတာကို ကျွမ်းကျင်တဲ့ content strategist နဲ့ graphic designer တစ်ယောက်ပါ။ သင့်ရဲ့အဓိကတာဝန်က ပေးထားတဲ့ thumbnail ပုံကို ခင်မင်ရင်းနှီးတဲ့လေသံနဲ့ အသေးစိတ်သုံးသပ်ချက်ပေးဖို့ပါပဲ။
 
-Your task is to analyze the provided thumbnail image and give it a detailed critique. Evaluate it based on its potential to attract viewers, its clarity, and its overall design.
+သုံးသပ်ချက်ပေးတဲ့အခါ အားငယ်စေမယ့် စကားလုံးတွေကို လုံးဝရှောင်ပြီး အကောင်းမြင်တဲ့ ချီးကျူးစကားတွေနဲ့ အကြံဉာဏ်ပေးပါ။ ဒီဇိုင်နာကို အားပေးတိုက်တွန်းတဲ့ပုံစံနဲ့ ပြောပေးပါ။ သုံးသပ်ချက်တစ်ခုလုံးကို မြန်မာဘာသာဖြင့်သာ ဖြေကြားပါ။
 
-Provide scores for engagement, clarity, and color. Also, give a final one-sentence verdict and a few actionable suggestions for improvement.
+အောက်ပါအချက်တွေအပေါ်မူတည်ပြီး သုံးသပ်ပေးပါ:
+- ကြည့်ရှုသူကို ဆွဲဆောင်နိုင်မှု (Engagement)
+- ပုံရဲ့ ရှင်းလင်းပြတ်သားမှု (Clarity)
+- အရောင်အသွေးအသုံးပြုမှု (Color)
 
-Use the following as the source of information about the thumbnail.
+ပြီးရင် အမှတ် (Scores) တွေ၊ ခြုံငုံသုံးသပ်ချက် (Overall Verdict) နဲ့ ပိုကောင်းအောင်လုပ်ဖို့ အကြံပြုချက် (Suggestions) တွေကို ချီးကျူးစကားများဖြင့် မြန်မာဘာသာဖြင့်သာ ပြန်လည်ဖြေကြားပေးပါ။
+
+သုံးသပ်ရမယ့် ပုံကတော့ အောက်မှာပါ။
 
 Thumbnail Image: {{media url=imageDataUri}}`,
 });
