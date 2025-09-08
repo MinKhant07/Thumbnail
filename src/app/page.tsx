@@ -6,9 +6,8 @@ import { Upload, Search } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, orderBy, query } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +51,7 @@ type Thumbnail = {
   id: string;
   title: string;
   category: string;
-  imageUrl: string;
+  imageUrl: string; // This will now be a Base64 Data URI
   createdAt: Date;
 };
 
@@ -63,6 +62,14 @@ const uploadSchema = z.object({
 });
 
 const categories = ["All", "Gaming", "Vlog", "Tutorial", "Lifestyle", "Tech", "Cooking", "Education"];
+
+// Helper function to convert a file to a Base64 data URI
+const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+});
 
 export default function Home() {
   const [thumbnails, setThumbnails] = useState<Thumbnail[]>([]);
@@ -83,18 +90,27 @@ export default function Home() {
 
   useEffect(() => {
     const fetchThumbnails = async () => {
-      const q = query(collection(db, "thumbnails"), orderBy("createdAt", "desc"));
-      const querySnapshot = await getDocs(q);
-      const fetchedThumbnails = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt.toDate(),
-      } as Thumbnail));
-      setThumbnails(fetchedThumbnails);
+      try {
+        const q = query(collection(db, "thumbnails"), orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+        const fetchedThumbnails = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt.toDate(),
+        } as Thumbnail));
+        setThumbnails(fetchedThumbnails);
+      } catch (error) {
+        console.error("Error fetching thumbnails: ", error);
+        toast({
+            title: "Loading Failed",
+            description: "Could not fetch thumbnails. Make sure Firestore is set up correctly.",
+            variant: "destructive",
+        });
+      }
     };
 
     fetchThumbnails();
-  }, []);
+  }, [toast]);
 
   const fileRef = form.register("image");
 
@@ -106,24 +122,20 @@ export default function Home() {
     setUploadProgress(0);
 
     try {
-      // 1. Upload image to Firebase Storage
-      const storageRef = ref(storage, `thumbnails/${Date.now()}_${file.name}`);
+      // 1. Convert image to Base64 Data URI
       setUploadProgress(30);
-
-      const uploadResult = await uploadBytes(storageRef, file);
+      const imageDataUrl = await toBase64(file);
       setUploadProgress(60);
-      
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-      setUploadProgress(80);
 
       // 2. Save thumbnail data to Firestore
       const newThumbnailData = {
         title: values.title,
         category: values.category,
-        imageUrl: downloadURL,
+        imageUrl: imageDataUrl,
         createdAt: new Date(),
       };
-
+      
+      setUploadProgress(80);
       const docRef = await addDoc(collection(db, "thumbnails"), newThumbnailData);
       
       const newThumbnail: Thumbnail = {

@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+// We are not using Firebase Storage anymore, so we remove the import.
 
 const firebaseConfig = {
   "projectId": "new-prototype-xn0xr",
@@ -14,6 +14,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
-export { db, storage };
+// We are not using Firebase Storage anymore, so we remove the storage export.
+export { db };
