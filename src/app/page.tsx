@@ -47,6 +47,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 
+const MAX_IMAGE_SIZE_MB = 1;
+const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024;
+
 type Thumbnail = {
   id: string;
   title: string;
@@ -58,7 +61,13 @@ type Thumbnail = {
 const uploadSchema = z.object({
   title: z.string().min(3, { message: "Title must be at least 3 characters." }),
   category: z.string({ required_error: "Please select a category." }),
-  image: z.any().refine((files) => files?.length == 1, "Image is required."),
+  image: z
+    .any()
+    .refine((files) => files?.length == 1, "Image is required.")
+    .refine(
+      (files) => files?.[0]?.size <= MAX_IMAGE_SIZE_BYTES,
+      `Image must be less than ${MAX_IMAGE_SIZE_MB}MB.`
+    ),
 });
 
 const categories = ["All", "Gaming", "Vlog", "Tutorial", "Lifestyle", "Tech", "Cooking", "Education"];
@@ -113,6 +122,12 @@ export default function Home() {
   }, [toast]);
 
   const fileRef = form.register("image");
+  
+  const handleDialogClose = () => {
+    setIsDialogOpen(false);
+    form.reset();
+    setImagePreview(null);
+  }
 
   async function onSubmit(values: z.infer<typeof uploadSchema>) {
     const file = values.image[0];
@@ -122,12 +137,17 @@ export default function Home() {
     setUploadProgress(0);
 
     try {
-      // 1. Convert image to Base64 Data URI
       setUploadProgress(30);
       const imageDataUrl = await toBase64(file);
+
+      // Firestore has a 1MB limit for documents. The Base64 string is larger than the raw file.
+      // We double-check here on the Base64 string size for safety, though the initial file size check should catch most cases.
+      if (imageDataUrl.length > MAX_IMAGE_SIZE_BYTES * 1.4) { // 1.4 is a rough factor for base64 encoding overhead
+         throw new Error(`Image is too large after encoding. Please use a smaller file.`);
+      }
+      
       setUploadProgress(60);
 
-      // 2. Save thumbnail data to Firestore
       const newThumbnailData = {
         title: values.title,
         category: values.category,
@@ -138,10 +158,7 @@ export default function Home() {
       setUploadProgress(80);
       const docRef = await addDoc(collection(db, "thumbnails"), newThumbnailData);
       
-      const newThumbnail: Thumbnail = {
-        id: docRef.id,
-        ...newThumbnailData,
-      };
+      const newThumbnail: Thumbnail = { id: docRef.id, ...newThumbnailData };
 
       setThumbnails([newThumbnail, ...thumbnails]);
       setUploadProgress(100);
@@ -151,15 +168,16 @@ export default function Home() {
         description: `Thumbnail "${values.title}" has been added.`,
       });
       
-      // Reset form and close dialog
-      setIsDialogOpen(false);
-      form.reset();
-      setImagePreview(null);
+      handleDialogClose();
+
     } catch (error) {
       console.error("Error uploading thumbnail:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
       toast({
         title: "Upload Failed",
-        description: "There was an error uploading your thumbnail. Please try again.",
+        description: errorMessage.includes("too large") 
+          ? `The image is too large. Please upload an image smaller than ${MAX_IMAGE_SIZE_MB}MB.`
+          : "There was an error uploading your thumbnail. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -182,10 +200,10 @@ export default function Home() {
         </h1>
         <div className="ml-auto flex items-center gap-4">
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) {
-              form.reset();
-              setImagePreview(null);
+            if (open) {
+                setIsDialogOpen(true);
+            } else {
+                handleDialogClose();
             }
           }}>
             <DialogTrigger asChild>
