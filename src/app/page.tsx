@@ -8,7 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, orderBy, query, doc, deleteDoc, updateDoc } from "firebase/firestore";
-import { critiqueThumbnail, CritiqueThumbnailOutput } from "@/ai/flows/critique-thumbnail-flow";
+import { critiqueThumbnail } from "@/ai/flows/critique-thumbnail-flow";
+import type { CritiqueThumbnailOutput } from "@/ai/flows/types";
 
 import { Button } from "@/components/ui/button";
 import {
