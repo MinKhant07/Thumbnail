@@ -529,7 +529,7 @@ export default function Home() {
         </Dialog>
         {/* AI Critique Dialog */}
         <Dialog open={isCritiqueDialogOpen} onOpenChange={setIsCritiqueDialogOpen}>
-            <DialogContent className="sm:max-w-2xl">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg md:max-w-2xl">
                  <DialogHeader>
                     <DialogTitle>AI Thumbnail Critique</DialogTitle>
                     <DialogDescription>
@@ -545,7 +545,7 @@ export default function Home() {
                 )}
                 
                 {critiqueResult && !isCritiquing && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 py-4">
                     <div className="relative aspect-video">
                         <Image src={critiqueResult.thumbnailUrl} alt={critiqueResult.thumbnailTitle} fill className="object-contain rounded-md" />
                     </div>
